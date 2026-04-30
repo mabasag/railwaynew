@@ -3,13 +3,15 @@ import subprocess
 import threading
 import queue
 import time
-from PIL import ImageGrab
 import io
 import os
 import platform
 import requests
 import uuid
 import json
+import mss
+from PIL import Image
+from PIL import ImageGrab
 
 app = Flask(__name__)
 
@@ -45,24 +47,33 @@ def read_output():
         if line:
             output_queue.put(line)
 
-# Start reading thread
 threading.Thread(target=read_output, daemon=True).start()
 
 
 # =========================
-# SCREENSHOT STREAM
+# SCREENSHOT STREAM (MSS)
 # =========================
 def generate_screen():
-    while True:
-        img = ImageGrab.grab()
-        buf = io.BytesIO()
-        img.save(buf, format='JPEG')
-        frame = buf.getvalue()
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]  # primary monitor
 
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        while True:
+            sct_img = sct.grab(monitor)
 
-        time.sleep(0.5)
+            img = Image.frombytes(
+                "RGB",
+                sct_img.size,
+                sct_img.rgb
+            )
+
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=70)
+            frame = buf.getvalue()
+
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+            time.sleep(0.5)
 
 
 @app.route('/screen')
@@ -125,7 +136,7 @@ HTML = """
 </head>
 <body>
 
-<h2>🖥 Remote Screen + Terminal</h2>
+<h2>🖥 Remote Screen + Terminal (Ubuntu Ready)</h2>
 
 <img src="/screen">
 
